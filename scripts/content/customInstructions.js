@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-globals */
-/* global toast, setUserSystemMessage, customInstructionSettingsElement, getUserSystemMessage */
+/* global toast, setUserSystemMessage, customInstructionSettingsElement */
 
 function checkmarkIcon(placement, profileId) {
   const checkmark = document.createElement('span');
@@ -72,7 +72,7 @@ function profileDropdown(customInstructionProfiles, placement) {
     });
     dropdownItem.addEventListener('click', () => {
       const customInstructionsDialog = document.querySelector('[role="dialog"][data-state="open"][tabindex="-1"]');
-      if (placement === 'new-page') {
+      if (placement === 'new-page' && profileName !== '+ Add new profile') {
         setUserSystemMessage(profileAboutUser, profileAboutModel, true);
       }
       if (profileName === '+ Add new profile' && !customInstructionsDialog) {
@@ -87,7 +87,7 @@ function profileDropdown(customInstructionProfiles, placement) {
           setTimeout(() => {
             const cusstomInstructionsProfileDropdown = document.querySelector('#custom-instructions-profile-dropdown-list-settings');
             cusstomInstructionsProfileDropdown.lastChild.click();
-          }, 1000);
+          }, 600);
         }, 300);
         return;
       }
@@ -111,16 +111,19 @@ function profileDropdown(customInstructionProfiles, placement) {
         const previousSelectedProfile = oldCip.find((p) => p.isSelected);
 
         setTimeout(() => {
-          const newCip = oldCip.map((p) => {
-            if (p.id === profileId) {
-              return { ...p, isSelected: true };
-            }
-            return { ...p, isSelected: false };
-          });
+          const newCip = placement === 'new-page'
+            ? oldCip.map((p) => {
+              if (p.id === profileId) {
+                return { ...p, isSelected: true };
+              }
+              return { ...p, isSelected: false };
+            })
+            : oldCip;
 
           chrome.storage.local.set({ customInstructionProfiles: newCip }, () => {
-            const selectedProfileTitle = document.querySelector(`#custom-instructions-selected-profile-title-${placement}`);
+            const selectedProfileTitle = document.querySelector(`[id^="custom-instructions-selected-profile-title-${placement}-"]`);
             selectedProfileTitle.textContent = profileName;
+            selectedProfileTitle.id = `custom-instructions-selected-profile-title-${placement}-${profileId}`;
             // remove the old checkmark from the previous selected profile
             const oldCheckmark = document.querySelector(`[id^=custom-instructions-profile-dropdown-checkmark-${placement}-`);
             if (oldCheckmark) oldCheckmark.remove();
@@ -177,7 +180,7 @@ function profileDropdownButton(customInstructionProfiles, placement) {
   span.appendChild(span2);
   const span3 = document.createElement('span');
   span3.className = 'font-semibold truncate';
-  span3.id = `custom-instructions-selected-profile-title-${placement}`;
+  span3.id = `custom-instructions-selected-profile-title-${placement}-${selectedProfile?.id}`;
   span3.textContent = selectedProfile?.name || customInstructionProfiles[0]?.name || 'No saved profile';
   span2.appendChild(span3);
   const span4 = document.createElement('span');
@@ -195,6 +198,7 @@ function profileDropdownButton(customInstructionProfiles, placement) {
   });
   return button;
 }
+// eslint-disable-next-line no-unused-vars
 function upgradeCustomInstructions() {
   // observe the body and wait for the custom instructions dialog to be added
   // there should be a div with role="dialog" and a h2 with text "Custom instructions"
@@ -204,9 +208,9 @@ function upgradeCustomInstructions() {
     mutationsList.forEach((mutation) => {
       if (mutation.type === 'childList') {
         setTimeout(() => {
+          const customInstructionsDialog = document.querySelector('[role="dialog"][data-state="open"][tabindex="-1"]');
+          if (!customInstructionsDialog) return;
           chrome.storage.local.get(['customInstructionProfiles'], (result) => {
-            const customInstructionsDialog = document.querySelector('[role="dialog"][data-state="open"][tabindex="-1"]');
-            if (!customInstructionsDialog) return;
             const customInstructionsDialogHeader = customInstructionsDialog.querySelector('h2');
             const existingProfileButtonWrapper = customInstructionsDialog.querySelector('#custom-instructions-profile-button-wrapper-settings');
             const textAreaFields = customInstructionsDialog.querySelectorAll('textarea');
@@ -216,6 +220,7 @@ function upgradeCustomInstructions() {
               const { customInstructionProfiles } = result;
               const newCustomInstructionProfiles = customInstructionProfiles;
               const selectedProfile = customInstructionProfiles.find((p) => p.isSelected);
+
               if (selectedProfile) {
                 textAreaFields[0].value = selectedProfile.aboutUser;
                 textAreaFields[0].dispatchEvent(new Event('input', { bubbles: true }));
@@ -283,6 +288,8 @@ function upgradeCustomInstructions() {
               textAreaFields.forEach((t) => {
                 t.addEventListener('input', () => {
                   setTimeout(() => {
+                    const allButtons = body.querySelectorAll('button');
+                    const saveButton = [...allButtons].find((b) => b.textContent === 'Save');
                     const curNameInput = document.querySelector('#custom-instructions-name-input');
                     if (curNameInput.value === '') {
                       saveButton.disabled = true;
@@ -296,68 +303,76 @@ function upgradeCustomInstructions() {
               });
               // find a button inside body that has text "Save"
               const allButtons = body.querySelectorAll('button');
-              const toggleButton = [...allButtons].find((b) => b.role === 'switch');
+              const toggleButton = [...allButtons].find((b) => b.getAttribute('role') === 'switch');
               const saveButton = [...allButtons].find((b) => b.textContent === 'Save');
               // add a chane listener to the toggle button
-              toggleButton.addEventListener('click', () => {
-                const currState = toggleButton.getAttribute('aria-checked');
+              if (toggleButton) {
+                toggleButton.addEventListener('click', () => {
+                  const currState = toggleButton.getAttribute('aria-checked');
 
-                // when toggle off nameinput shoud be disabled
-                const curNameInput = document.querySelector('#custom-instructions-name-input');
-                if (currState === 'true') {
-                  curNameInput.disabled = true;
-                  curNameInput.classList.add('text-gray-300');
-                } else {
-                  curNameInput.disabled = false;
-                  curNameInput.classList.remove('text-gray-300');
-                }
-                setTimeout(() => {
-                  if (curNameInput.value === '') {
-                    saveButton.disabled = true;
-                    saveButton.classList.add('opacity-50', 'cursor-not-allowed');
-                  } else if (curNameInput.value !== selectedProfile?.name) {
-                    saveButton.disabled = false;
-                    saveButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                  }
-                }, 10);
-              });
-              // add a click listener to the save button
-              saveButton.addEventListener('click', () => {
-                chrome.storage.local.get(['customInstructionProfiles'], (res) => {
-                  const { customInstructionProfiles: cip } = res;
+                  // when toggle off nameinput shoud be disabled
                   const curNameInput = document.querySelector('#custom-instructions-name-input');
-                  const curTextAreaFields = document.querySelectorAll('[role="dialog"][data-state="open"][tabindex="-1"] textarea');
-                  const curAboutUserInput = curTextAreaFields[0];
-                  const curAboutModelInput = curTextAreaFields[1];
-                  const curSelectedProfile = cip.find((p) => p.isSelected);
-
-                  if (!curSelectedProfile) {
-                    const newCip = [...cip, {
-                      name: curNameInput.value, aboutUser: curAboutUserInput.value, aboutModel: curAboutModelInput.value, isSelected: true, id: self.crypto.randomUUID(),
-                    }];
-                    chrome.storage.local.set({ customInstructionProfiles: newCip }, () => {
-                      toast('Profile saved');
-                      reloadCustomInstructionSettings();
-                    });
+                  if (currState === 'true') {
+                    curNameInput.disabled = true;
+                    curNameInput.classList.add('text-gray-300');
                   } else {
-                    const newCip = cip.map((p) => {
-                      if (p.isSelected) {
-                        return {
-                          ...p, name: curNameInput.value, aboutUser: curAboutUserInput.value, aboutModel: curAboutModelInput.value,
-                        };
-                      }
-                      return p;
-                    });
-                    chrome.storage.local.set({ customInstructionProfiles: newCip }, () => {
-                      toast('Profile updated');
-                      reloadCustomInstructionSettings();
-                    });
+                    curNameInput.disabled = false;
+                    curNameInput.classList.remove('text-gray-300');
                   }
+                  setTimeout(() => {
+                    const curAllButtons = body.querySelectorAll('button');
+                    const curSaveButton = [...curAllButtons].find((b) => b.textContent === 'Save');
+                    if (curNameInput.value === '') {
+                      curSaveButton.disabled = true;
+                      curSaveButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else if (curNameInput.value !== selectedProfile?.name) {
+                      curSaveButton.disabled = false;
+                      curSaveButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                  }, 10);
                 });
-              });
+              }
+              if (saveButton) {
+                // add a click listener to the save button
+                saveButton.addEventListener('click', () => {
+                  chrome.storage.local.get(['customInstructionProfiles'], (res) => {
+                    const { customInstructionProfiles: cip } = res;
+                    const curNameInput = document.querySelector('#custom-instructions-name-input');
+                    const curTextAreaFields = document.querySelectorAll('[role="dialog"][data-state="open"][tabindex="-1"] textarea');
+                    const curAboutUserInput = curTextAreaFields[0];
+                    const curAboutModelInput = curTextAreaFields[1];
+                    const selectedProfileTitle = document.querySelector('[id^="custom-instructions-selected-profile-title-settings-"]');
+                    const selectedProfileId = selectedProfileTitle.id.split('custom-instructions-selected-profile-title-settings-')[1];
+                    const curSelectedProfile = cip.find((p) => p.id === selectedProfileId);
+
+                    if (!curSelectedProfile) {
+                      const newCip = [...cip.map((p) => ({ ...p, isSelected: false })), {
+                        name: curNameInput.value, aboutUser: curAboutUserInput.value, aboutModel: curAboutModelInput.value, isSelected: true, id: self.crypto.randomUUID(),
+                      }];
+                      chrome.storage.local.set({ customInstructionProfiles: newCip }, () => {
+                        toast('Profile saved');
+                        reloadCustomInstructionSettings();
+                      });
+                    } else {
+                      const newCip = cip.map((p) => {
+                        if (p.id === selectedProfileId) {
+                          return {
+                            ...p, name: curNameInput.value, aboutUser: curAboutUserInput.value, aboutModel: curAboutModelInput.value, isSelected: true,
+                          };
+                        }
+                        return { ...p, isSelected: false };
+                      });
+                      chrome.storage.local.set({ customInstructionProfiles: newCip }, () => {
+                        toast('Profile updated');
+                        reloadCustomInstructionSettings();
+                      });
+                    }
+                  });
+                });
+              }
             }
           });
-        }, 200);
+        }, 100);
       }
     });
   };
